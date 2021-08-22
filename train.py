@@ -76,7 +76,7 @@ def train_epoch(model, data_iter, optimizer, scheduler):
         loss = output.loss#loss_fn(output.logits, target)
 
         losses.append(loss.item())
-        accuracy.append(compute_metrics(output.logits, labels))
+        accuracy.append(compute_metrics(output.logits.detach().cpu(), labels.detach().cpu()))
 
         loss.backward()
         optimizer.step()
@@ -103,7 +103,7 @@ def evaluate_epoch(model, data_iter):
 
         output = model(ids, masks)
 
-        accuracy.append(compute_metrics(output.logits, labels))
+        accuracy.append(compute_metrics(output.logits.detach().cpu(), labels.detach().cpu()))
 
     accuracy = np.mean(accuracy)
 
