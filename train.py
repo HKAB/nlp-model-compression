@@ -240,6 +240,10 @@ def main():
     assert len(test_task)
     assert len(dev_task)
     
+    train_task = train_task[:-1]
+    test_task = test_task[:-1]
+    dev_task = dev_task[:-1]
+    
 #     predictions = torch.randint(low=0, high=9, size=(14, 256, 9))
 #     targets = torch.randint(low=0, high=9, size=(14, 256, 1))
 #     assert compute_metrics(predictions, targets)
@@ -250,8 +254,8 @@ def main():
     # change this when real train
     batch_size = int(options.batch)
 
-    train_dataset = TokenClassificationDataset(train_task[:], target_list, tokenizer)
-    val_dataset = TokenClassificationDataset(dev_task[:], target_list, tokenizer)
+    train_dataset = TokenClassificationDataset(train_task, target_list, tokenizer)
+    val_dataset = TokenClassificationDataset(dev_task, target_list, tokenizer)
     
     train_iter = DataLoader(
         train_dataset,
