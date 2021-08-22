@@ -179,7 +179,7 @@ def main():
     
     parser.add_option('-t', '--task',
         action="store", dest="task",
-        help="task: 'ner' or 'pos'", default="pos")
+        help="task: 'ner' or 'pos'", default="p")
     
     parser.add_option('-e', '--epochs',
         action="store", dest="epochs",
@@ -191,7 +191,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base", use_fast=True)
     print(f'Loaded tokenizer, using {device}')
     
-    if (options.task == "pos"):
+    if (options.task == "p"):
         POS_PATH = 'data/POS_data/POS_data'
 
         target_list = ["N", "Np", "CH", "M", "R", "A", "P", "V", "Nc", "E", "L", "C", "Ny", 
