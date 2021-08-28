@@ -10,6 +10,8 @@ import io
 from torch.utils.data import DataLoader
 import optparse
 import pickle
+from constants import *
+import os.path
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -113,7 +115,7 @@ def train(model, train_iter, val_iter, optimizer, scheduler, epochs):
     train_scores, train_losses = [], []
     val_scores = []
     # best_score = None
-    es = EarlyStopping(patience=5, path='results/checkpoint.pt')
+    es = EarlyStopping(patience=5, path=CHECKPOINT_PATH)
 
     for epoch in range(epochs):
         train_score, train_loss = train_epoch(model, train_iter, optimizer, scheduler)
@@ -185,119 +187,133 @@ def main():
         action="store", dest="epochs",
         help="number of epochs", default=30)
     
+    parser.add_option('-m', '--mode',
+        action="store", dest="mode",
+        help="train/test mode", default='train')
+    
     
     options, args = parser.parse_args()
-
+    
     tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base", use_fast=True)
     print(f'Loaded tokenizer, using {device}')
     
-    if (options.task == "p"):
-        POS_PATH = 'data/POS_data/POS_data'
+    if (options.mode == "train"):
+        # check if it has the results directory for torch.save
+        
+        assert os.path.exists("/results")
+        if (options.task == "p"):
+            target_list = POS_TARGET
 
-        target_list = ["N", "Np", "CH", "M", "R", "A", "P", "V", "Nc", "E", "L", "C", "Ny", 
-                    "T", "Nb", "Y", "Nu", "Cc", "Vb", "I", "X", "Z", "B", "Eb", "Vy", 
-                    "Cb", "Mb", "Pb", "Ab", "Ni", "Xy", "NY"]
+            with io.open(POS_PATH_TRAIN, encoding='utf-8') as f:
+                train_task = f.read()
+            with io.open(POS_PATH_DEV, encoding='utf-8') as f:
+                dev_task = f.read()
 
-        with io.open(POS_PATH + '/VLSP2013_POS_train.txt', encoding='utf-8') as f:
-            train_task = f.read()
-        with io.open(POS_PATH + '/VLSP2013_POS_test.txt', encoding='utf-8') as f:
-            test_task = f.read()
-        with io.open(POS_PATH + '/VLSP2013_POS_dev.txt', encoding='utf-8') as f:
-            dev_task = f.read()
+            train_task = train_task.split('\n\n')
+            dev_task = dev_task.split('\n\n')
+            print('Load POS data sucessfully!')
+        else:
 
-        train_task = train_task.split('\n\n')
-        test_task = test_task.split('\n\n')
-        dev_task = dev_task.split('\n\n')
-        print('Load POS data sucessfully!')
+            target_list = NER_TARGET
+
+            with io.open(NER_PATH_TRAIN, encoding='utf-8') as f:
+                train_task = f.read()
+            with io.open(NER_PATH_DEV, encoding='utf-8') as f:
+                dev_task = f.read()
+
+            train_task = train_task.split('\n\n')
+            dev_task = dev_task.split('\n\n')
+            print('Load NER data sucessfully!')
+
+        assert len(train_task)
+        assert len(dev_task)
+
+        train_task = train_task[:-1]
+        dev_task = dev_task[:-1]
+
+    #     predictions = torch.randint(low=0, high=9, size=(14, 256, 9))
+    #     targets = torch.randint(low=0, high=9, size=(14, 256, 1))
+    #     assert compute_metrics(predictions, targets)
+
+        # same as in the paper
+        epochs = int(options.epochs)
+        lr = 1e-5
+        # change this when real train
+        batch_size = int(options.batch)
+
+        train_dataset = TokenClassificationDataset(train_task, target_list, tokenizer)
+        val_dataset = TokenClassificationDataset(dev_task, target_list, tokenizer)
+
+        train_iter = DataLoader(
+            train_dataset,
+            batch_size = batch_size,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True
+        )
+
+        val_iter = DataLoader(
+            val_dataset,
+            batch_size = batch_size,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True
+        )
+
+        print(f'Loaded dataset')
+
+        num_classes = len(target_list)
+        model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", num_labels=num_classes)
+        model.to(device)
+
+        print(f'Loaded model')
+
+        optimizer = AdamW(model.parameters(), lr)    
+        train_scores, train_losses, val_scores = train(model, train_iter, val_iter, 
+                                                    optimizer, None, epochs)
     else:
-        NER_PATH = 'data/NER_data'
-                      
-        target_list = [
-            "O",       # Outside of a named entity
-            "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
-            "I-MISC",  # Miscellaneous entity
-            "B-PER",   # Beginning of a person's name right after another person's name
-            "I-PER",   # Person's name
-            "B-ORG",   # Beginning of an organisation right after another organisation
-            "I-ORG",   # Organisation
-            "B-LOC",   # Beginning of a location right after another location
-            "I-LOC"    # Location
-        ]
+        if (options.task == "p"):
+            target_list = POS_TARGET
+            with io.open(POS_PATH_TEST, encoding='utf-8') as f:
+                test_task = f.read()
+            test_task = test_task.split('\n\n')
+            print('Load POS data sucessfully!')
+        else:
+            target_list = NER_TARGET
+            with io.open(NER_PATH_TEST, encoding='utf-8') as f:
+                test_task = f.read()
+            test_task = test_task.split('\n\n')
+            print('Load NER data sucessfully!')
         
-        with io.open(NER_PATH + '/train.txt', encoding='utf-8') as f:
-            train_task = f.read()
-        with io.open(NER_PATH + '/test.txt', encoding='utf-8') as f:
-            test_task = f.read()
-        with io.open(NER_PATH + '/dev.txt', encoding='utf-8') as f:
-            dev_task = f.read()
+        assert len(test_task)
+
+        test_task = test_task[:-1]
+    
+        test_dataset = TokenClassificationDataset(test_task, target_list, tokenizer)
         
-        train_task = train_task.split('\n\n')
-        test_task = test_task.split('\n\n')
-        dev_task = dev_task.split('\n\n')
-        print('Load NER data sucessfully!')
-                      
-    assert len(train_task)
-    assert len(test_task)
-    assert len(dev_task)
-    
-    train_task = train_task[:-1]
-    test_task = test_task[:-1]
-    dev_task = dev_task[:-1]
-    
-#     predictions = torch.randint(low=0, high=9, size=(14, 256, 9))
-#     targets = torch.randint(low=0, high=9, size=(14, 256, 1))
-#     assert compute_metrics(predictions, targets)
-    
-    # same as in the paper
-    epochs = int(options.epochs)
-    lr = 1e-5
-    # change this when real train
-    batch_size = int(options.batch)
+        batch_size = int(options.batch)
+        
+        test_iter = DataLoader(
+            test_dataset,
+            batch_size = batch_size,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True
+        )
+        
+        # check if pretrained model exist
+        assert os.path.isfile(CHECKPOINT_PATH)
+        
+        num_classes = len(target_list)
+        model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", num_labels=num_classes)
+        model.to(device)
+        model.load_state_dict(torch.load(CHECKPOINT_PATH))
 
-    train_dataset = TokenClassificationDataset(train_task, target_list, tokenizer)
-    val_dataset = TokenClassificationDataset(dev_task, target_list, tokenizer)
-    
-    train_iter = DataLoader(
-        train_dataset,
-        batch_size = batch_size,
-        shuffle=True,
-        num_workers=2,
-        pin_memory=True
-    )
+        print(f'Loaded model')
 
-    val_iter = DataLoader(
-        val_dataset,
-        batch_size = batch_size,
-        shuffle=True,
-        num_workers=2,
-        pin_memory=True
-    )
-    
-    print(f'Loaded dataset')
-    
-    num_classes = len(target_list)
-    model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", num_labels=num_classes)
-    model.to(device)
-    
-    print(f'Loaded model')
-    
-    optimizer = AdamW(model.parameters(), lr)    
-    train_scores, train_losses, val_scores = train(model, train_iter, val_iter, 
-                                                optimizer, None, epochs)
-    
-    test_dataset = TokenClassificationDataset(test_task[:-1], target_list, tokenizer)
+        test_accuracy = evaluate_test(model, test_iter)
 
-    test_iter = DataLoader(
-        test_dataset,
-        batch_size = batch_size,
-        shuffle=True,
-        num_workers=2,
-        pin_memory=True
-    )
-    
-    test_accuracy = evaluate_test(model, test_iter)
-    
-    print(f"Test accuracy: {test_accuracy}")
+        print(f"Test accuracy: {test_accuracy}")
     
 if __name__ == "__main__":
     main()
