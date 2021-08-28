@@ -285,7 +285,7 @@ def main():
     train_scores, train_losses, val_scores = train(model, train_iter, val_iter, 
                                                 optimizer, None, epochs)
     
-    test_dataset = TokenClassificationDataset(test_task[:], target_list, tokenizer)
+    test_dataset = TokenClassificationDataset(test_task[:-1], target_list, tokenizer)
 
     test_iter = DataLoader(
         test_dataset,
