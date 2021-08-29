@@ -244,8 +244,8 @@ def main():
         # change this when real train
         batch_size = int(options.batch)
 
-        train_dataset = TokenClassificationDataset(train_task[:1], target_list, tokenizer)
-        val_dataset = TokenClassificationDataset(dev_task[:1], target_list, tokenizer)
+        train_dataset = TokenClassificationDataset(train_task, target_list, tokenizer)
+        val_dataset = TokenClassificationDataset(dev_task, target_list, tokenizer)
 
         train_iter = DataLoader(
             train_dataset,
@@ -301,7 +301,7 @@ def main():
 
         test_task = test_task[:-1]
     
-        test_dataset = TokenClassificationDataset(test_task[:1], target_list, tokenizer)
+        test_dataset = TokenClassificationDataset(test_task, target_list, tokenizer)
         
         batch_size = int(options.batch)
         
