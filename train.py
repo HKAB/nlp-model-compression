@@ -12,7 +12,9 @@ import optparse
 import pickle
 from constants import *
 import os.path
+import os
 
+os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 """
@@ -144,7 +146,7 @@ def evaluate_test(model, test_iter):
     accuracy = []
     
     with torch.no_grad():
-        for data in test_iter:
+        for data in tqdm(test_iter):
         # updater.zero_grad()
 
             ids = data['ids'].to(device, non_blocking=True)

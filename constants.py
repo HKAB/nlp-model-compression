@@ -59,3 +59,6 @@ NER_TARGET = [
 # Checkpoint
 RESULT_PATH = 'results'
 CHECKPOINT_PATH = RESULT_PATH + '/checkpoint.pt'
+
+# Device
+CUDA_VISIBLE_DEVICES = 0
