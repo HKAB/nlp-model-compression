@@ -203,7 +203,7 @@ def main():
     if (options.mode == "train"):
         # check if it has the results directory for torch.save
         
-        assert os.path.exists("results")
+        assert os.path.exists(RESULT_PATH)
         if (options.task == "p"):
             target_list = POS_TARGET
 

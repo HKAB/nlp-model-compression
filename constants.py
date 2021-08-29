@@ -41,9 +41,9 @@ POS_TARGET = [
 
 # NER task constants
 NER_PATH = 'data/NER_data'
-NER_PATH_TRAIN = POS_PATH + '/train.txt'
-NER_PATH_TEST = POS_PATH + '/test.txt'
-NER_PATH_DEV = POS_PATH + '/dev.txt'
+NER_PATH_TRAIN = NER_PATH + '/train.txt'
+NER_PATH_TEST = NER_PATH + '/test.txt'
+NER_PATH_DEV = NER_PATH + '/dev.txt'
 NER_TARGET = [
     "O",       # Outside of a named entity
     "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
@@ -57,4 +57,5 @@ NER_TARGET = [
 ]
 
 # Checkpoint
-CHECKPOINT_PATH = 'results/checkpoint.pt'
+RESULT_PATH = 'results'
+CHECKPOINT_PATH = RESULT_PATH + '/checkpoint.pt'
