@@ -142,26 +142,29 @@ def evaluate_test(model, test_iter):
     pred_labels = []
     true_labels = []
     accuracy = []
+    
+    with torch.no_grad():
+        for data in test_iter:
+        # updater.zero_grad()
 
-    for data in test_iter:
-    # updater.zero_grad()
+            ids = data['ids'].to(device, non_blocking=True)
+            masks = data['masks'].to(device, non_blocking=True)
+            # token_type_ids = data['token_type_ids'].to(device, non_blocking=True)
+            labels = data['labels'].to(device, non_blocking=True)
 
-        ids = data['ids'].to(device, non_blocking=True)
-        masks = data['masks'].to(device, non_blocking=True)
-        # token_type_ids = data['token_type_ids'].to(device, non_blocking=True)
-        labels = data['labels'].to(device, non_blocking=True)
+            output = model(ids, masks)
 
-        output = model(ids, masks)
-
-        pred_labels.append(output.logits)
-        true_labels.append(labels)
+            pred_labels.append(output.logits.detach().cpu())
+            true_labels.append(labels.detach().cpu())
 
         # accuracy.append(compute_metrics(output.logits, labels))
     
-    with open("results/pred_labels.txt", "wb+") as fp:
-        pickle.dump(pred_labels, fp)
-    with open("results/true_labels.txt", "wb+") as fp:
-        pickle.dump(true_labels, fp)
+#     with open("results/pred_labels.pkl", "wb+") as fp:
+#         pickle.dump(pred_labels, fp)
+#     with open("results/true_labels.pkl", "wb+") as fp:
+#         pickle.dump(true_labels, fp)
+    np.save("results/pred_labels", [pred_label.numpy() for pred_label in pred_labels])
+    np.save("results/true_labels", [true_label.numpy() for true_label in true_labels])
     
     for pred_label, true_label in zip(pred_labels, true_labels):
         accuracy.append(compute_metrics(pred_label, true_label))
@@ -200,7 +203,7 @@ def main():
     if (options.mode == "train"):
         # check if it has the results directory for torch.save
         
-        assert os.path.exists("/results")
+        assert os.path.exists("results")
         if (options.task == "p"):
             target_list = POS_TARGET
 
@@ -241,8 +244,8 @@ def main():
         # change this when real train
         batch_size = int(options.batch)
 
-        train_dataset = TokenClassificationDataset(train_task, target_list, tokenizer)
-        val_dataset = TokenClassificationDataset(dev_task, target_list, tokenizer)
+        train_dataset = TokenClassificationDataset(train_task[:1], target_list, tokenizer)
+        val_dataset = TokenClassificationDataset(dev_task[:1], target_list, tokenizer)
 
         train_iter = DataLoader(
             train_dataset,
@@ -271,6 +274,15 @@ def main():
         optimizer = AdamW(model.parameters(), lr)    
         train_scores, train_losses, val_scores = train(model, train_iter, val_iter, 
                                                     optimizer, None, epochs)
+#         with open("results/train_scores.pkl", "wb+") as fp:
+#             pickle.dump(train_scores, fp)
+#         with open("results/train_losses.pkl", "wb+") as fp:
+#             pickle.dump(train_losses, fp)
+#         with open("results/val_scores.pkl", "wb+") as fp:
+#             pickle.dump(val_scores, fp)
+        np.save("results/train_scores", train_scores)
+        np.save("results/train_losses", train_losses)
+        np.save("results/val_scores", val_scores)
     else:
         if (options.task == "p"):
             target_list = POS_TARGET
@@ -289,7 +301,7 @@ def main():
 
         test_task = test_task[:-1]
     
-        test_dataset = TokenClassificationDataset(test_task, target_list, tokenizer)
+        test_dataset = TokenClassificationDataset(test_task[:1], target_list, tokenizer)
         
         batch_size = int(options.batch)
         
