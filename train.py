@@ -163,8 +163,8 @@ def evaluate_test(model, test_iter):
 #         pickle.dump(pred_labels, fp)
 #     with open("results/true_labels.pkl", "wb+") as fp:
 #         pickle.dump(true_labels, fp)
-    np.save("results/pred_labels", [pred_label.numpy() for pred_label in pred_labels])
-    np.save("results/true_labels", [true_label.numpy() for true_label in true_labels])
+    np.save(RESULT_PATH + "/pred_labels", [pred_label.numpy() for pred_label in pred_labels])
+    np.save(RESULT_PATH + "/true_labels", [true_label.numpy() for true_label in true_labels])
     
     for pred_label, true_label in zip(pred_labels, true_labels):
         accuracy.append(compute_metrics(pred_label, true_label))
@@ -280,9 +280,9 @@ def main():
 #             pickle.dump(train_losses, fp)
 #         with open("results/val_scores.pkl", "wb+") as fp:
 #             pickle.dump(val_scores, fp)
-        np.save("results/train_scores", train_scores)
-        np.save("results/train_losses", train_losses)
-        np.save("results/val_scores", val_scores)
+        np.save(RESULT_PATH + "/train_scores", train_scores)
+        np.save(RESULT_PATH + "/train_losses", train_losses)
+        np.save(RESULT_PATH + "/val_scores", val_scores)
     else:
         if (options.task == "p"):
             target_list = POS_TARGET
