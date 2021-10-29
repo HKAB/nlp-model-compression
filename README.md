@@ -7,7 +7,7 @@ Experiments for language model compression
 ## Features
 
 - Quantization
-- Movement pruning for RoBERTa (source code is [huggingface](https://github.com/huggingface/transformers/tree/master/examples/research_projects/movement-pruning))
+- Movement pruning for RoBERTa (source code from [huggingface](https://github.com/huggingface/transformers/tree/master/examples/research_projects/movement-pruning))
 
   
 ## Results
