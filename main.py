@@ -16,6 +16,7 @@ import os
 import time
 
 os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
+# device = torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 """
@@ -330,6 +331,8 @@ def main():
         model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base",
                                                                 num_labels=num_classes)
         model.to(device)
+        if ('quantized' in CHECKPOINT_PATH):
+          model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
         model.load_state_dict(torch.load(CHECKPOINT_PATH))
 
         print(f'Loaded model')
@@ -343,16 +346,16 @@ def main():
         def inference_latency(model, inputs, num_samples=100, num_warmups=100):
             with torch.no_grad():
                 for _ in range(num_warmups):
-                    _ = model(torch.unsqueeze(inputs['ids'], 0), 
-                              torch.unsqueeze(inputs['masks'], 0))
-#             torch.cuda.synchronize()
+                    _ = model(torch.unsqueeze(inputs['ids'].to(device), 0), 
+                              torch.unsqueeze(inputs['masks'].to(device), 0))
+            torch.cuda.synchronize()
 
             with torch.no_grad():
                 stime = time.time()
                 for _ in range(num_samples):
-                    _ = model(torch.unsqueeze(inputs['ids'], 0), 
-                              torch.unsqueeze(inputs['masks'], 0))
-#                     torch.cuda.synchronize()
+                    _ = model(torch.unsqueeze(inputs['ids'].to(device), 0), 
+                              torch.unsqueeze(inputs['masks'].to(device), 0))
+                    torch.cuda.synchronize()
                 etime = time.time()
             elapsed_time = etime - stime
 
@@ -375,6 +378,8 @@ def main():
         num_classes = len(target_list)
         model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", 
                                                                 num_labels=num_classes).to(device)
+        if ('quantized' in MEASURE_MODEL_PATH):
+          model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
         model.load_state_dict(torch.load(MEASURE_MODEL_PATH, map_location=device))
 
         # we going to feed the model iteratively and then get the average result
