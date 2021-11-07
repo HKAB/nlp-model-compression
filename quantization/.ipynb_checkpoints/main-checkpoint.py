@@ -13,8 +13,10 @@ import pickle
 from constants import *
 import os.path
 import os
+import time
 
 os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
+# device = torch.device('cpu')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 """
@@ -177,24 +179,31 @@ def evaluate_test(model, test_iter):
 
 def main():
     
-    parser = optparse.OptionParser()
+    helptext = """
+    For training:               python main.py -m train -t [TASK] -b [BATCH] -e [EPOCH]
+    For test:                   python main.py -m test -t [TASK] -b [BATCH] -e [EPOCH]
+    For measure inference time: python main.py -m measure_infer -t [TASK]
+        (Make sure you change the MEASURE_MODEL_PATH constant to the right model on results folder)\n
+    """
     
+    optparse.OptionParser.format_epilog = lambda self, formatter: self.epilog
+    parser = optparse.OptionParser(epilog=helptext)
     
     parser.add_option('-b', '--batch',
         action="store", dest="batch",
-        help="batch size", default=32)
+        help="Batch size. Default: 32", default=32)
     
     parser.add_option('-t', '--task',
         action="store", dest="task",
-        help="task: 'ner' or 'pos'", default="p")
+        help="Type of task: 'n' (for NER) or 'p' (for POS). Default: p", default="p")
     
     parser.add_option('-e', '--epochs',
         action="store", dest="epochs",
-        help="number of epochs", default=30)
+        help="Number of epochs. Default: 30", default=30)
     
     parser.add_option('-m', '--mode',
         action="store", dest="mode",
-        help="train/test mode", default='train')
+        help="train/test/measure_infer mode. Default: train", default='train')
     
     
     options, args = parser.parse_args()
@@ -285,7 +294,7 @@ def main():
         np.save(RESULT_PATH + "/train_scores", train_scores)
         np.save(RESULT_PATH + "/train_losses", train_losses)
         np.save(RESULT_PATH + "/val_scores", val_scores)
-    else:
+    elif options.mode == "test":
         if (options.task == "p"):
             target_list = POS_TARGET
             with io.open(POS_PATH_TEST, encoding='utf-8') as f:
@@ -319,8 +328,11 @@ def main():
         assert os.path.isfile(CHECKPOINT_PATH)
         
         num_classes = len(target_list)
-        model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", num_labels=num_classes)
+        model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base",
+                                                                num_labels=num_classes)
         model.to(device)
+        if ('quantized' in CHECKPOINT_PATH):
+          model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
         model.load_state_dict(torch.load(CHECKPOINT_PATH))
 
         print(f'Loaded model')
@@ -328,6 +340,61 @@ def main():
         test_accuracy = evaluate_test(model, test_iter)
 
         print(f"Test accuracy: {test_accuracy}")
+        
+    elif options.mode == "measure_infer":
+        
+        def inference_latency(model, inputs, num_samples=100, num_warmups=100):
+            with torch.no_grad():
+                for _ in range(num_warmups):
+                    _ = model(torch.unsqueeze(inputs['ids'].to(device), 0), 
+                              torch.unsqueeze(inputs['masks'].to(device), 0))
+            torch.cuda.synchronize()
+
+            with torch.no_grad():
+                stime = time.time()
+                for _ in range(num_samples):
+                    _ = model(torch.unsqueeze(inputs['ids'].to(device), 0), 
+                              torch.unsqueeze(inputs['masks'].to(device), 0))
+                    torch.cuda.synchronize()
+                etime = time.time()
+            elapsed_time = etime - stime
+
+            return elapsed_time, elapsed_time/num_samples
+
+        if (options.task == "p"):
+            target_list = POS_TARGET
+            with io.open(POS_PATH_TEST, encoding='utf-8') as f:
+                test_task = f.read()
+            test_task = test_task.split('\n\n')
+            print('Load POS data sucessfully!')
+        else:
+            target_list = NER_TARGET
+            with io.open(NER_PATH_TEST, encoding='utf-8') as f:
+                test_task = f.read()
+            test_task = test_task.split('\n\n')
+            print('Load NER data sucessfully!')
+        
+        assert len(test_task)
+        num_classes = len(target_list)
+        model = AutoModelForTokenClassification.from_pretrained("vinai/phobert-base", 
+                                                                num_labels=num_classes).to(device)
+        if ('quantized' in MEASURE_MODEL_PATH):
+          model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
+        model.load_state_dict(torch.load(MEASURE_MODEL_PATH, map_location=device))
+
+        # we going to feed the model iteratively and then get the average result
+        test_task = test_task[:1]
+    
+        test_dataset = TokenClassificationDataset(test_task, target_list, tokenizer)
+        
+        total_runtime, avg_runtime = inference_latency(model, 
+                                                       test_dataset[0], 
+                                                       num_samples=10, 
+                                                       num_warmups=10)
+        print(f'Total: {total_runtime:.2f}s \nAverage: {avg_runtime:.2f} s/sample')
+        
+    else:
+        print("No such mode exist!")
     
 if __name__ == "__main__":
     main()
