@@ -407,7 +407,8 @@ def main():
         config = RobertaConfig(num_labels=num_classes, num_hidden_layers=num_hidden_layers_after_prune)
         
         model = RobertaForTokenClassification.from_pretrained("vinai/phobert-base", config=config)
-        model.load_state_dict(torch.load(options.file, map_location=device))
+        model.to(device)
+        model.load_state_dict(torch.load(options.file))
 
         # we going to feed the model iteratively and then get the average result
         test_task = test_task[:1]
