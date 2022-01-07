@@ -10,8 +10,6 @@ import numpy as np
 from tqdm import tqdm
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer, AutoModelForTokenClassification
-from transformers import AdamW
 import os
 import transformers
 from torch.nn.utils import clip_grad_norm_
@@ -150,7 +148,7 @@ class Trainer:
             val_loss_list = []
             val_maxp_list = []
             
-            for start_idx in range(0, len(valids_id), self._batch_size):
+            for start_idx in range(0, len(valid_ids), self._batch_size):
             # for start_idx in range(0, 2, self._batch_size):
                 word_ids = valid_ids[start_idx:start_idx + self._batch_size]
                 
@@ -185,7 +183,7 @@ class Trainer:
     
         with open(prefix + ".codes", "w+", encoding='utf-8') as fout:
             vocab_list = list(range(self.vocab_size))
-            for start_idx in tqdm(range(0, vocab_size, self._batch_size)):
+            for start_idx in tqdm(range(0, self.vocab_size, self._batch_size)):
             # for start_idx in tqdm(range(0, 2, self._batch_size)):
                 word_ids = torch.Tensor(
                     vocab_list[start_idx:start_idx + self._batch_size]).long() 
@@ -207,7 +205,7 @@ class Trainer:
         assert os.path.exists(self._model_path + ".pt")
         vocab_list = list(range(self.vocab_size))
         distances = []
-        for start_idx in range(0, len(valids_id), self._batch_size):
+        for start_idx in range(0, len(vocab_list), self._batch_size):
         # for start_idx in range(0, 2, self._batch_size):
             word_ids = torch.Tensor(
                     vocab_list[start_idx:start_idx + self._batch_size]).long()

@@ -1,17 +1,7 @@
-import numpy as np
-from tqdm import tqdm
 import torch
-import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer, AutoModelForTokenClassification
-from transformers import AdamW
+from transformers import AutoModel, AutoTokenizer
 import os
-import transformers
-from torch.nn.utils import clip_grad_norm_
-from torch.optim import Adam
-import time
-import random
-import torch.nn.functional as F
-from utils import PretrainedEmbedding, EmbeddingCompressor, Trainer
+from utils import EmbeddingCompressor, Trainer
 import optparse
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
