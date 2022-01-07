@@ -59,7 +59,9 @@ def main():
         compressor = EmbeddingCompressor(embedding_dim=embedding_dim, 
                                          num_codebooks=num_codebooks, 
                                          num_vectors=num_vectors)
-
+        if use_gpu:
+            compressor = compressor.cuda()
+            
         trainer = Trainer(compressor, 
                           num_embedding=num_embeddings, 
                           embedding_dim=embedding_dim, model_path=result_path + "/embedding_compressed.pt", lr=1e-4, 
@@ -73,7 +75,8 @@ def main():
         compressor = EmbeddingCompressor(embedding_dim=embedding_dim, 
                                          num_codebooks=num_codebooks, 
                                          num_vectors=num_vectors)
-        
+        if use_gpu:
+            compressor = compressor.cuda()
         assert os.path.exists(result_path + "/embedding_compressed.pt")
         
         compressor.load_state_dict(torch.load(result_path + "/embedding_compressed.pt"))
