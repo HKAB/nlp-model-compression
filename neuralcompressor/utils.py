@@ -62,7 +62,9 @@ class EmbeddingCompressor(nn.Module):
         
         self.hidden_layer2 = nn.Linear(
             num_codebooks*num_vectors//2, num_codebooks*num_vectors, bias = True)
-        self.codebook = nn.Parameter(torch.FloatTensor(
+        # Do not initialize with torch.FloatTensor, element in the matrix can be nan
+        # https://discuss.pytorch.org/t/nan-in-torch-tensor/8987
+        self.codebook = nn.Parameter(torch.zeros(
             self.M*self.K, embedding_dim), requires_grad = True)
         
     def _encode(self, embeddings):
@@ -171,7 +173,7 @@ class Trainer:
                     len(train_loss_list) / time_elapsed
                 ))
         print('Training done!')
-    def export(self, prefix):
+    def export(self, prefix, result_path):
         assert os.path.exists(self._model_path)
         vocab_list = list(range(self.vocab_size))
         
@@ -179,9 +181,9 @@ class Trainer:
         if self.use_gpu:
             codebook = codebook.cpu()
         
-        np.save(prefix + ".codebook", codebook.numpy())
+        np.save(result_path + "/" + prefix + ".codebook", codebook.numpy())
     
-        with open(prefix + ".codes", "w+", encoding='utf-8') as fout:
+        with open(result_path + "/" + prefix + ".codes", "w+", encoding='utf-8') as fout:
             vocab_list = list(range(self.vocab_size))
             for start_idx in tqdm(range(0, self.vocab_size, self._batch_size)):
             # for start_idx in tqdm(range(0, 2, self._batch_size)):
