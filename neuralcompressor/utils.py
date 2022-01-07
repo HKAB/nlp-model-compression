@@ -172,7 +172,7 @@ class Trainer:
                 ))
         print('Training done!')
     def export(self, prefix):
-        assert os.path.exists(self._model_path + ".pt")
+        assert os.path.exists(self._model_path)
         vocab_list = list(range(self.vocab_size))
         
         codebook = dict(self.model.named_parameters())['codebook'].data
@@ -202,7 +202,7 @@ class Trainer:
                     word = self.embedding.i2w[w_id]
                     fout.write(word + "\t" + " ".join(map(str, code)) + "\n")
     def evaluate(self):
-        assert os.path.exists(self._model_path + ".pt")
+        assert os.path.exists(self._model_path)
         vocab_list = list(range(self.vocab_size))
         distances = []
         for start_idx in range(0, len(vocab_list), self._batch_size):

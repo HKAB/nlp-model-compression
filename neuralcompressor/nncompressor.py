@@ -35,6 +35,10 @@ def main():
                   action="store", dest="mode", 
                   help="Mode: train/eval", default="train")
     
+    parser.add_option('-r', '--result_path',
+                  action="store", dest="result_path", 
+                  help="Result path", default=".")
+    
     options, args = parser.parse_args()
     
     model = AutoModel.from_pretrained(options.model_name)
@@ -47,6 +51,9 @@ def main():
     batch_size = int(options.batch)
     use_gpu = torch.cuda.is_available()
     max_epochs = int(options.epochs)
+    result_path = options.result_path
+    
+    assert os.path.exists(result_path)
     
     if (options.mode == "train"):
         compressor = EmbeddingCompressor(embedding_dim=embedding_dim, 
@@ -55,19 +62,19 @@ def main():
 
         trainer = Trainer(compressor, 
                           num_embedding=num_embeddings, 
-                          embedding_dim=embedding_dim, model_path="embedding_compressed", lr=1e-4, 
+                          embedding_dim=embedding_dim, model_path=result_path + "/embedding_compressed.pt", lr=1e-4, 
                           use_gpu=use_gpu, batch_size=batch_size)
         
         trainer.load_pretrained_embedding(tokenizer, model.embeddings.word_embeddings)
         trainer.run(max_epochs=max_epochs)
+        torch.save(trainer.model.state_dict(), result_path + "/embedding_compressed.pt")
         trainer.export("embedding_compressed")
-        torch.save(trainer.model.state_dict(), "embedding_compressed.pt")
     elif options.mode == "eval":
         compressor = EmbeddingCompressor(embedding_dim=embedding_dim, 
                                          num_codebooks=num_codebooks, 
                                          num_vectors=num_vectors)
         
-        assert os.path.exists("embedding_compressed.pt")
+        assert os.path.exists(result_path + "/embedding_compressed.pt")
         
         compressor.load_state_dict(torch.load("embedding_compressed.pt"))
         compressor.eval()
