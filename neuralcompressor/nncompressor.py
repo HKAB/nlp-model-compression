@@ -68,7 +68,7 @@ def main():
         trainer.load_pretrained_embedding(tokenizer, model.embeddings.word_embeddings)
         trainer.run(max_epochs=max_epochs)
         torch.save(trainer.model.state_dict(), result_path + "/embedding_compressed.pt")
-        trainer.export("embedding_compressed")
+        trainer.export("embedding_compressed", result_path)
     elif options.mode == "eval":
         compressor = EmbeddingCompressor(embedding_dim=embedding_dim, 
                                          num_codebooks=num_codebooks, 
@@ -76,12 +76,12 @@ def main():
         
         assert os.path.exists(result_path + "/embedding_compressed.pt")
         
-        compressor.load_state_dict(torch.load("embedding_compressed.pt"))
+        compressor.load_state_dict(torch.load(result_path + "/embedding_compressed.pt"))
         compressor.eval()
         
         trainer = Trainer(compressor, 
                           num_embedding=num_embeddings, 
-                          embedding_dim=embedding_dim, model_path="embedding_compressed", lr=1e-4, 
+                          embedding_dim=embedding_dim, model_path=result_path + "/embedding_compressed.pt", lr=1e-4, 
                           use_gpu=use_gpu, batch_size=batch_size)
         trainer.load_pretrained_embedding(tokenizer, model.embeddings.word_embeddings)
         
