@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoModelForTokenClassification
 import optparse
-from ..global_constants import CUDA_VISIBLE_DEVICES
+from constants import CUDA_VISIBLE_DEVICES
 from constants import RESULT_PATH
 import os.path
 import os

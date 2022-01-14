@@ -4,11 +4,11 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 from transformers import AdamW
-from ..global_constants import EarlyStopping, TokenClassificationDataset
+from utils import EarlyStopping, TokenClassificationDataset
 import io
 from torch.utils.data import DataLoader
 import optparse
-from ..global_constants import CUDA_VISIBLE_DEVICES, POS_TARGET, NER_TARGET, POS_PATH_TRAIN, NER_PATH_TRAIN, \
+from constants import CUDA_VISIBLE_DEVICES, POS_TARGET, NER_TARGET, POS_PATH_TRAIN, NER_PATH_TRAIN, \
                                 NER_PATH_DEV, POS_PATH_DEV, POS_PATH_TEST, NER_PATH_TEST
 from constants import CHECKPOINT_PATH, RESULT_PATH, \
                          MEASURE_MODEL_PATH
