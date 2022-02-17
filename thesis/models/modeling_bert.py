@@ -1019,13 +1019,14 @@ class BertModel(BertPreTrainedModel):
         # layers_attention: [batch x layers]
         # encoder_outputs[2] is all the hidden_states: tuple size layers x (batch x seq_len x hidden_size)
         # sequence_output: [batch x seq_len x hidden_size]
-        # ignore embedding layer, stack layers hidden states
-        sequence_output = torch.matmul(layers_attention,
-                            torch.stack(
-                                encoder_outputs[1][1:]).reshape((self.config.num_hidden_layers, -1)
-                                                                )).reshape(batch_size, 
-                                                                           self.config.max_position_embeddings, 
-                                                                           self.config.hidden_size)
+        
+        # First, unsqueeze layers_attention to [batch x 1 x layers], then stack hidden states of 12 layer [layers x batch x seq_len x hidden_size]
+        # then permute the shape to  [batch x layers x seq_len x hidden_size], then we can do batch mm. After that we convert the result to the
+        # original size (equal to last_hidden_state) [batch x layers x seq_len x hidden_size]
+        sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(layers_attention, 1),
+                                    torch.stack(encoder_outputs[1][1:])\
+                                    .permute(1, 0, 2, 3)\
+                                    .reshape(batch_size, self.config.num_hidden_layers, -1))).reshape(batch_size, 128, 768)
         
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
