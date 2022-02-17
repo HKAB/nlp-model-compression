@@ -26,34 +26,7 @@ from torch import nn
 from torch.nn import init
 from torch.nn import functional as F
 
-from .binarizer import MagnitudeBinarizer, ThresholdBinarizer, TopKBinarizer
-
-# This function is from
-# https://stackoverflow.com/questions/16873441/form-a-big-2d-array-from-multiple-smaller-2d-arrays
-def blockshaped(arr, nrows, ncols):
-    """
-    Return an array of shape (n, nrows, ncols) where
-    n * nrows * ncols = arr.size
-
-    If arr is a 2D array, the returned array looks like n subblocks with
-    each subblock preserving the "physical" layout of arr.
-    """
-    h, w = arr.shape
-    
-    return (arr.reshape(h//nrows, nrows, -1, ncols)).swapaxis(1, 2).reshape(-1, nrows, ncols)
-
-def unblockshaped(arr, h, w):
-    """
-    Return an array of shape (h, w) where
-    h * w = arr.size
-
-    If arr is of shape (n, nrows, ncols), n sublocks of shape (nrows, ncols),
-    then the returned array preserves the "physical" layout of the sublocks.
-    """
-    n, nrows, ncols = arr.shape
-    return (arr.reshape(h//nrows, -1, nrows, ncols)
-               .swapaxes(1,2)
-               .reshape(h, w))
+from .binarizer import TopKBinarizer
 
 class MaskedLinear(nn.Linear):
     """
