@@ -861,7 +861,7 @@ class BertModel(BertPreTrainedModel):
         # parameters for calculate attention (hardcore now)
         self.W_layers_attention = nn.Linear(128*int(config.hidden_size), 
                                             int(config.num_hidden_layers))
-        torch.nn.init.constant_(self.W_layers_attention.weight, 1.0/12)
+        torch.nn.init.uniform_(self.W_layers_attention.weight)
         
         self.encoder = BertEncoder(config)
 
