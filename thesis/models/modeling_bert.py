@@ -861,7 +861,7 @@ class BertModel(BertPreTrainedModel):
         # parameters for calculate attention (hardcore now)
         self.W_layers_attention = nn.Linear(128*int(config.hidden_size), 
                                             int(config.num_hidden_layers))
-        torch.nn.init.uniform_(self.W_layers_attention.weight)
+        torch.nn.init.constant_(self.W_layers_attention.weight, 1.0/12)
         
         self.encoder = BertEncoder(config)
 
@@ -996,7 +996,7 @@ class BertModel(BertPreTrainedModel):
         
         # calculate approximate attention here
         # embedding_output: (batch x seq_length x hidden_size)
-        layers_attention = torch.nn.functional.softmax(
+        self.layers_attention = torch.nn.functional.softmax(
             self.W_layers_attention(embedding_output.reshape((batch_size, -1))),
             dim = 1)
         
@@ -1023,10 +1023,11 @@ class BertModel(BertPreTrainedModel):
         # First, unsqueeze layers_attention to [batch x 1 x layers], then stack hidden states of 12 layer [layers x batch x seq_len x hidden_size]
         # then permute the shape to  [batch x layers x seq_len x hidden_size], then we can do batch mm. After that we convert the result to the
         # original size (equal to last_hidden_state) [batch x layers x seq_len x hidden_size]
-        sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(layers_attention, 1),
+        sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(self.layers_attention, 1),
                                     torch.stack(encoder_outputs[1][1:])\
-                                    .permute(1, 0, 2, 3)\
-                                    .reshape(batch_size, self.config.num_hidden_layers, -1))).reshape(batch_size, 128, 768)
+                                        .permute(1, 0, 2, 3)\
+                                        .reshape(batch_size, self.config.num_hidden_layers, -1)))\
+                            .reshape(batch_size, 128, 768)
         
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
