@@ -619,6 +619,103 @@ class BertEncoder(nn.Module):
             attentions=all_self_attentions,
             cross_attentions=all_cross_attentions,
         )
+    
+    # Function to inference with batch = 1
+    # layers_attention: (1 x layers)
+    def inference_forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_values=None,
+        use_cache=None,
+        output_attentions=False,
+        output_hidden_states=False,
+        return_dict=True,
+        max_layer=None
+    ):
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
+        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        
+        next_decoder_cache = () if use_cache else None
+        for i, layer_module in enumerate(self.layer):
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+            
+            # stop when we see max attention
+            if i > max_layer:
+                break
+            
+            layer_head_mask = head_mask[i] if head_mask is not None else None
+            past_key_value = past_key_values[i] if past_key_values is not None else None
+
+            if getattr(self.config, "gradient_checkpointing", False) and self.training:
+
+                if use_cache:
+                    logger.warning(
+                        "`use_cache=True` is incompatible with `config.gradient_checkpointing=True`. Setting "
+                        "`use_cache=False`..."
+                    )
+                    use_cache = False
+
+                def create_custom_forward(module):
+                    def custom_forward(*inputs):
+                        return module(*inputs, past_key_value, output_attentions)
+
+                    return custom_forward
+
+                layer_outputs = torch.utils.checkpoint.checkpoint(
+                    create_custom_forward(layer_module),
+                    hidden_states,
+                    attention_mask,
+                    layer_head_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                )
+            else:
+                layer_outputs = layer_module(
+                    hidden_states,
+                    attention_mask,
+                    layer_head_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                    past_key_value,
+                    output_attentions,
+                )
+
+            hidden_states = layer_outputs[0]
+            if use_cache:
+                next_decoder_cache += (layer_outputs[-1],)
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+                if self.config.add_cross_attention:
+                    all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        if not return_dict:
+            return tuple(
+                v
+                for v in [
+                    hidden_states,
+                    next_decoder_cache,
+                    all_hidden_states,
+                    all_self_attentions,
+                    all_cross_attentions,
+                ]
+                if v is not None
+            )
+        return BaseModelOutputWithPastAndCrossAttentions(
+            last_hidden_state=hidden_states,
+            past_key_values=next_decoder_cache,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attentions,
+            cross_attentions=all_cross_attentions,
+        )
 
 
 class BertPooler(nn.Module):
@@ -858,7 +955,7 @@ class BertModel(BertPreTrainedModel):
         self.config = config
 
         self.embeddings = BertEmbeddings(config)
-        # parameters for calculate attention (hardcore now)
+        # parameters for calculate attention (hardcode now)
         self.W_layers_attention = nn.Linear(128*int(config.hidden_size), 
                                             int(config.num_hidden_layers))
         torch.nn.init.uniform_(self.W_layers_attention.weight)
@@ -1000,48 +1097,74 @@ class BertModel(BertPreTrainedModel):
             self.W_layers_attention(embedding_output.reshape((batch_size, -1))),
             dim = 1)
         
-        encoder_outputs = self.encoder(
-            embedding_output,
-            attention_mask=extended_attention_mask,
-            head_mask=head_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_extended_attention_mask,
-            past_key_values=past_key_values,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            # output_hidden_states=output_hidden_states,
-            output_hidden_states=True,
-            return_dict=True,
-        )
+        if not self.training:
+            stop_layer = torch.max(self.layers_attention, dim=1).indices
+            encoder_outputs = self.encoder.inference_forward(
+                embedding_output,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_extended_attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                # output_hidden_states=output_hidden_states,
+                output_hidden_states=True,
+                return_dict=True,
+                max_layer=stop_layer
+            )
+        else:
+            encoder_outputs = self.encoder(
+                embedding_output,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_extended_attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                # output_hidden_states=output_hidden_states,
+                output_hidden_states=True,
+                return_dict=True,
+            )
         # sequence_output = encoder_outputs[0]
         # pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
         
         # layers_attention: [batch x layers]
-        # encoder_outputs[2] is all the hidden_states: tuple size layers x (batch x seq_len x hidden_size)
+        # encoder_outputs[1] is all the hidden_states: tuple size layers x (batch x seq_len x hidden_size)
         # sequence_output: [batch x seq_len x hidden_size]
+        pooled_sequence_outputs = []
+        for layer_hidden_state in encoder_outputs[1][1:]:
+            layer_pooled_output = self.pooler(layer_hidden_state) if self.pooler is not None else None
+            pooled_sequence_outputs.append(layer_pooled_output)
         
-        # First, unsqueeze layers_attention to [batch x 1 x layers], then stack hidden states of 12 layer [layers x batch x seq_len x hidden_size]
-        # then permute the shape to  [batch x layers x seq_len x hidden_size], then we can do batch mm. After that we convert the result to the
-        # original size (equal to last_hidden_state) [batch x layers x seq_len x hidden_size]
-        sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(self.layers_attention, 1),
-                                    torch.stack(encoder_outputs[1][1:])\
-                                        .permute(1, 0, 2, 3)\
-                                        .reshape(batch_size, self.config.num_hidden_layers, -1)))\
-                            .reshape(batch_size, 128, 768)
-        
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        # We do not calculate average hidden states when inference, instead using last state to predict
+        if not self.training:
+            attention_sequence_output = None
+            attention_pooled_output = None
+        else:
+            # First, unsqueeze layers_attention to [batch x 1 x layers], then stack hidden states of 12 layer [layers x batch x seq_len x hidden_size]
+            # then permute the shape to  [batch x layers x seq_len x hidden_size], then we can do batch mm. After that we convert the result to the
+            # original size (equal to last_hidden_state) [batch x layers x seq_len x hidden_size]
+            attention_sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(self.layers_attention, 1),
+                                        torch.stack(encoder_outputs[1][1:])\
+                                            .permute(1, 0, 2, 3)\
+                                            .reshape(batch_size, self.config.num_hidden_layers, -1)))\
+                                .reshape(batch_size, 128, self.config.hidden_size)
+            
+            attention_pooled_output = self.pooler(attention_sequence_output) if self.pooler is not None else None
 
         if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
+            return (attention_sequence_output, attention_pooled_output) + encoder_outputs[1][1:]
 
         return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
+            last_hidden_state=attention_sequence_output,
+            pooler_output=attention_pooled_output,
             past_key_values=encoder_outputs.past_key_values,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
             cross_attentions=encoder_outputs.cross_attentions,
-        )
+        ), pooled_sequence_outputs
 
 
 @add_start_docstrings(
@@ -1515,8 +1638,12 @@ class BertForSequenceClassification(BertPreTrainedModel):
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-
+        self.layer_classifier = nn.ModuleList([
+            nn.Linear(config.hidden_size, config.num_labels) for _ in range(config.num_hidden_layers)
+            ])
+        self.avg_classifier = nn.Linear(config.hidden_size, config.num_labels)
+        
+        self.layer_stop = None
         self.init_weights()
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
@@ -1546,8 +1673,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
             If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.bert(
+        
+        # pooled_sequence_outputs is a list hold pooled output of 12 layers
+        outputs, pooled_sequence_outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -1559,42 +1687,66 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return_dict=return_dict,
         )
         
-        # layers_attention: [batch x layers]
-        # outputs[2] is all the hidden_states: [layers x batch x seq_len x hidden_size]
-        # final_hidden_states: [batch x seq_len x hidden_size]
-        # final_hidden_states = layers_attention*outputs[2][1:, :, :, :]
-        
-        pooled_output = outputs[1]
-
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-
-        loss = None
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
-
-            if self.config.problem_type == "regression":
-                loss_fct = MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(logits.squeeze(), labels.squeeze())
-                else:
+        if self.training:
+            pooled_output = outputs[1]
+    
+            pooled_output = self.dropout(pooled_output)
+            logits = self.avg_classifier(pooled_output)
+            
+            loss = None
+            if labels is not None:
+                if self.config.problem_type is None:
+                    if self.num_labels == 1:
+                        self.config.problem_type = "regression"
+                    elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                        self.config.problem_type = "single_label_classification"
+                    else:
+                        self.config.problem_type = "multi_label_classification"
+                    
+                if self.config.problem_type == "regression":
+                    loss_fct = MSELoss()
+                    if self.num_labels == 1:
+                        loss = loss_fct(logits.squeeze(), labels.squeeze())
+                    else:
+                        loss = loss_fct(logits, labels)
+                elif self.config.problem_type == "single_label_classification":
+                    loss_fct = CrossEntropyLoss()
+                    loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                elif self.config.problem_type == "multi_label_classification":
+                    loss_fct = BCEWithLogitsLoss()
                     loss = loss_fct(logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels)
+                
+                # Add loss of layer classifiers
+                for i in range(self.config.num_hidden_layers):
+                    pooled_output = pooled_sequence_outputs[i]
+                    pooled_output = self.dropout(pooled_output)
+                    logits = self.layer_classifier[i](pooled_output)
+                    
+                    if self.config.problem_type == "regression":
+                        loss_fct = MSELoss()
+                        if self.num_labels == 1:
+                            loss += loss_fct(logits.squeeze(), labels.squeeze())
+                        else:
+                            loss += loss_fct(logits, labels)
+                    elif self.config.problem_type == "single_label_classification":
+                        loss_fct = CrossEntropyLoss()
+                        loss += loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                    elif self.config.problem_type == "multi_label_classification":
+                        loss_fct = BCEWithLogitsLoss()
+                        loss += loss_fct(logits, labels)
+        else:
+            loss = None
+            # ignore the first hidden state as embedding hidden state
+            self.layer_stop = len(pooled_sequence_outputs) - 1
+            pooled_output = pooled_sequence_outputs[-1]
+            pooled_output = self.dropout(pooled_output)
+            logits = self.layer_classifier[self.layer_stop - 1](pooled_output)
+            
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
-
+        
+        # The final logits is from the last layer
         return SequenceClassifierOutput(
             loss=loss,
             logits=logits,
