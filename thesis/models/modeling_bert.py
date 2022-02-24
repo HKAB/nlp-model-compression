@@ -1002,6 +1002,7 @@ class BertModel(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        stop_layer=None
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -1098,7 +1099,8 @@ class BertModel(BertPreTrainedModel):
             dim = 1)
         
         if not self.training:
-            stop_layer = torch.max(self.layers_attention, dim=1).indices
+            if stop_layer is None:
+                stop_layer = torch.max(self.layers_attention, dim=1).indices
             encoder_outputs = self.encoder.inference_forward(
                 embedding_output,
                 attention_mask=extended_attention_mask,
@@ -1665,6 +1667,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        layer_stop=None # for experiment
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -1685,6 +1688,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            layer_stop=layer_stop
         )
         
         if self.training:
