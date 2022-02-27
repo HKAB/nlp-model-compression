@@ -620,7 +620,9 @@ class BertEncoder(nn.Module):
             cross_attentions=all_cross_attentions,
         )
     
-    def exit_forward(
+    # Function to inference with batch = 1
+    # layers_attention: (1 x layers)
+    def inference_forward(
         self,
         hidden_states,
         attention_mask=None,
@@ -632,18 +634,21 @@ class BertEncoder(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
-        exit_port=None,
-        pooler=None
+        max_layer=None
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
-
+        
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
-
+            
+            # stop when we see max attention
+            if i > max_layer:
+                break
+            
             layer_head_mask = head_mask[i] if head_mask is not None else None
             past_key_value = past_key_values[i] if past_key_values is not None else None
 
@@ -688,10 +693,7 @@ class BertEncoder(nn.Module):
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
-            
-            exit_decision = exit_port[i](pooler(hidden_states)).argmax(dim=1)
-            if exit_decision:
-                break
+
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -832,6 +834,7 @@ class BertPreTrainedModel(PreTrainedModel):
 class BertForPreTrainingOutput(ModelOutput):
     """
     Output type of :class:`~transformers.BertForPreTraining`.
+
     Args:
         loss (`optional`, returned when ``labels`` is provided, ``torch.FloatTensor`` of shape :obj:`(1,)`):
             Total loss as the sum of the masked language modeling loss and the next sequence prediction
@@ -844,10 +847,12 @@ class BertForPreTrainingOutput(ModelOutput):
         hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
             Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
             of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+
             Hidden-states of the model at the output of each layer plus the initial embedding outputs.
         attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
             Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
             sequence_length, sequence_length)`.
+
             Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
             heads.
     """
@@ -860,12 +865,15 @@ class BertForPreTrainingOutput(ModelOutput):
 
 
 BERT_START_DOCSTRING = r"""
+
     This model inherits from :class:`~transformers.PreTrainedModel`. Check the superclass documentation for the generic
     methods the library implements for all its model (such as downloading or saving, resizing the input embeddings,
     pruning heads etc.)
+
     This model is also a PyTorch `torch.nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__
     subclass. Use it as a regular PyTorch Module and refer to the PyTorch documentation for all matter related to
     general usage and behavior.
+
     Parameters:
         config (:class:`~transformers.BertConfig`): Model configuration class with all the parameters of the model.
             Initializing with a config file does not load the weights associated with the model, only the
@@ -877,29 +885,38 @@ BERT_INPUTS_DOCSTRING = r"""
     Args:
         input_ids (:obj:`torch.LongTensor` of shape :obj:`({0})`):
             Indices of input sequence tokens in the vocabulary.
+
             Indices can be obtained using :class:`~transformers.BertTokenizer`. See
             :meth:`transformers.PreTrainedTokenizer.encode` and :meth:`transformers.PreTrainedTokenizer.__call__` for
             details.
+
             `What are input IDs? <../glossary.html#input-ids>`__
         attention_mask (:obj:`torch.FloatTensor` of shape :obj:`({0})`, `optional`):
             Mask to avoid performing attention on padding token indices. Mask values selected in ``[0, 1]``:
+
             - 1 for tokens that are **not masked**,
             - 0 for tokens that are **masked**.
+
             `What are attention masks? <../glossary.html#attention-mask>`__
         token_type_ids (:obj:`torch.LongTensor` of shape :obj:`({0})`, `optional`):
             Segment token indices to indicate first and second portions of the inputs. Indices are selected in ``[0,
             1]``:
+
             - 0 corresponds to a `sentence A` token,
             - 1 corresponds to a `sentence B` token.
+
             `What are token type IDs? <../glossary.html#token-type-ids>`_
         position_ids (:obj:`torch.LongTensor` of shape :obj:`({0})`, `optional`):
             Indices of positions of each input sequence tokens in the position embeddings. Selected in the range ``[0,
             config.max_position_embeddings - 1]``.
+
             `What are position IDs? <../glossary.html#position-ids>`_
         head_mask (:obj:`torch.FloatTensor` of shape :obj:`(num_heads,)` or :obj:`(num_layers, num_heads)`, `optional`):
             Mask to nullify selected heads of the self-attention modules. Mask values selected in ``[0, 1]``:
+
             - 1 indicates the head is **not masked**,
             - 0 indicates the head is **masked**.
+
         inputs_embeds (:obj:`torch.FloatTensor` of shape :obj:`({0}, hidden_size)`, `optional`):
             Optionally, instead of passing :obj:`input_ids` you can choose to directly pass an embedded representation.
             This is useful if you want more control over how to convert :obj:`input_ids` indices into associated
@@ -921,10 +938,12 @@ BERT_INPUTS_DOCSTRING = r"""
 )
 class BertModel(BertPreTrainedModel):
     """
+
     The model can behave as an encoder (with only self-attention) as well as a decoder, in which case a layer of
     cross-attention is added between the self-attention layers, following the architecture described in `Attention is
     all you need <https://arxiv.org/abs/1706.03762>`__ by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit,
     Llion Jones, Aidan N. Gomez, Lukasz Kaiser and Illia Polosukhin.
+
     To behave as an decoder the model needs to be initialized with the :obj:`is_decoder` argument of the configuration
     set to :obj:`True`. To be used in a Seq2Seq model, the model needs to initialized with both :obj:`is_decoder`
     argument and :obj:`add_cross_attention` set to :obj:`True`; an :obj:`encoder_hidden_states` is then expected as an
@@ -936,6 +955,11 @@ class BertModel(BertPreTrainedModel):
         self.config = config
 
         self.embeddings = BertEmbeddings(config)
+        # parameters for calculate attention (hardcode now)
+        self.W_layers_attention = nn.Linear(128*int(config.hidden_size), 
+                                            int(config.num_hidden_layers))
+        torch.nn.init.uniform_(self.W_layers_attention.weight)
+        
         self.encoder = BertEncoder(config)
 
         self.pooler = BertPooler(config) if add_pooling_layer else None
@@ -978,6 +1002,7 @@ class BertModel(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        layer_stop=None
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -986,10 +1011,12 @@ class BertModel(BertPreTrainedModel):
         encoder_attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
             Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in
             the cross-attention if the model is configured as a decoder. Mask values selected in ``[0, 1]``:
+
             - 1 for tokens that are **not masked**,
             - 0 for tokens that are **masked**.
         past_key_values (:obj:`tuple(tuple(torch.FloatTensor))` of length :obj:`config.n_layers` with each tuple having 4 tensors of shape :obj:`(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
             Contains precomputed key and value hidden states of the attention blocks. Can be used to speed up decoding.
+
             If :obj:`past_key_values` are used, the user can optionally input only the last :obj:`decoder_input_ids`
             (those that don't have their past key value states given to this model) of shape :obj:`(batch_size, 1)`
             instead of all :obj:`decoder_input_ids` of shape :obj:`(batch_size, sequence_length)`.
@@ -1065,171 +1092,76 @@ class BertModel(BertPreTrainedModel):
             past_key_values_length=past_key_values_length,
         )
         
-        encoder_outputs = self.encoder(
-            embedding_output,
-            attention_mask=extended_attention_mask,
-            head_mask=head_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_extended_attention_mask,
-            past_key_values=past_key_values,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=True,
-            return_dict=return_dict,
-        )
+        # calculate approximate attention here
+        # embedding_output: (batch x seq_length x hidden_size)
+        self.layers_attention = torch.nn.functional.softmax(
+            self.W_layers_attention(embedding_output.reshape((batch_size, -1))),
+            dim = 1)
         
+        if not self.training:
+            if layer_stop is None:
+                layer_stop = torch.max(self.layers_attention, dim=1).indices
+            encoder_outputs = self.encoder.inference_forward(
+                embedding_output,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_extended_attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                # output_hidden_states=output_hidden_states,
+                output_hidden_states=True,
+                return_dict=True,
+                max_layer=layer_stop
+            )
+        else:
+            encoder_outputs = self.encoder(
+                embedding_output,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_extended_attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                # output_hidden_states=output_hidden_states,
+                output_hidden_states=True,
+                return_dict=True,
+            )
+        # sequence_output = encoder_outputs[0]
+        # pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        
+        # layers_attention: [batch x layers]
+        # encoder_outputs[1] is all the hidden_states: tuple size layers x (batch x seq_len x hidden_size)
+        # sequence_output: [batch x seq_len x hidden_size]
         pooled_sequence_outputs = []
         for layer_hidden_state in encoder_outputs[1][1:]:
             layer_pooled_output = self.pooler(layer_hidden_state) if self.pooler is not None else None
             pooled_sequence_outputs.append(layer_pooled_output)
         
-        sequence_output = encoder_outputs[0]
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        # We do not calculate average hidden states when inference, instead using last state to predict
+        if not self.training:
+            attention_sequence_output = None
+            attention_pooled_output = None
+        else:
+            # First, unsqueeze layers_attention to [batch x 1 x layers], then stack hidden states of 12 layer [layers x batch x seq_len x hidden_size]
+            # then permute the shape to  [batch x layers x seq_len x hidden_size], then we can do batch mm. After that we convert the result to the
+            # original size (equal to last_hidden_state) [batch x layers x seq_len x hidden_size]
+            attention_sequence_output = torch.squeeze(torch.bmm(torch.unsqueeze(self.layers_attention, 1),
+                                        torch.stack(encoder_outputs[1][1:])\
+                                            .permute(1, 0, 2, 3)\
+                                            .reshape(batch_size, self.config.num_hidden_layers, -1)))\
+                                .reshape(batch_size, 128, self.config.hidden_size)
+            
+            attention_pooled_output = self.pooler(attention_sequence_output) if self.pooler is not None else None
 
         if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
+            return (attention_sequence_output, attention_pooled_output) + encoder_outputs[1][1:]
 
         return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            past_key_values=encoder_outputs.past_key_values,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-            cross_attentions=encoder_outputs.cross_attentions,
-        ), pooled_sequence_outputs
-
-    def exit_forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_values=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        exit_port=None, # parameter for determining exit
-    ):
-        r"""
-        encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
-            Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention if
-            the model is configured as a decoder.
-        encoder_attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
-            Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in
-            the cross-attention if the model is configured as a decoder. Mask values selected in ``[0, 1]``:
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-        past_key_values (:obj:`tuple(tuple(torch.FloatTensor))` of length :obj:`config.n_layers` with each tuple having 4 tensors of shape :obj:`(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
-            Contains precomputed key and value hidden states of the attention blocks. Can be used to speed up decoding.
-            If :obj:`past_key_values` are used, the user can optionally input only the last :obj:`decoder_input_ids`
-            (those that don't have their past key value states given to this model) of shape :obj:`(batch_size, 1)`
-            instead of all :obj:`decoder_input_ids` of shape :obj:`(batch_size, sequence_length)`.
-        use_cache (:obj:`bool`, `optional`):
-            If set to :obj:`True`, :obj:`past_key_values` key value states are returned and can be used to speed up
-            decoding (see :obj:`past_key_values`).
-        """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        if self.config.is_decoder:
-            use_cache = use_cache if use_cache is not None else self.config.use_cache
-        else:
-            use_cache = False
-
-        if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        elif input_ids is not None:
-            input_shape = input_ids.size()
-            batch_size, seq_length = input_shape
-        elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
-            batch_size, seq_length = input_shape
-        else:
-            raise ValueError("You have to specify either input_ids or inputs_embeds")
-
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
-
-        # past_key_values_length
-        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
-
-        if attention_mask is None:
-            attention_mask = torch.ones(((batch_size, seq_length + past_key_values_length)), device=device)
-
-        if token_type_ids is None:
-            if hasattr(self.embeddings, "token_type_ids"):
-                buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
-                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
-                token_type_ids = buffered_token_type_ids_expanded
-            else:
-                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
-
-        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
-        # ourselves in which case we just need to make it broadcastable to all heads.
-        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
-
-        # If a 2D or 3D attention mask is provided for the cross-attention
-        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
-        if self.config.is_decoder and encoder_hidden_states is not None:
-            encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
-            encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
-            if encoder_attention_mask is None:
-                encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
-            encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
-        else:
-            encoder_extended_attention_mask = None
-
-        # Prepare head mask if needed
-        # 1.0 in head_mask indicate we keep the head
-        # attention_probs has shape bsz x n_heads x N x N
-        # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
-        # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
-
-        embedding_output = self.embeddings(
-            input_ids=input_ids,
-            position_ids=position_ids,
-            token_type_ids=token_type_ids,
-            inputs_embeds=inputs_embeds,
-            past_key_values_length=past_key_values_length,
-        )
-        
-        encoder_outputs = self.encoder.exit_forward(
-            embedding_output,
-            attention_mask=extended_attention_mask,
-            head_mask=head_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_extended_attention_mask,
-            past_key_values=past_key_values,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=True,
-            return_dict=return_dict,
-            exit_port=exit_port,
-            pooler=self.pooler
-        )
-        
-        pooled_sequence_outputs = []
-        for layer_hidden_state in encoder_outputs[1][1:]:
-            layer_pooled_output = self.pooler(layer_hidden_state) if self.pooler is not None else None
-            pooled_sequence_outputs.append(layer_pooled_output)
-        
-        sequence_output = encoder_outputs[0]
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
-
-        if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
-
-        return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
+            last_hidden_state=attention_sequence_output,
+            pooler_output=attention_pooled_output,
             past_key_values=encoder_outputs.past_key_values,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
@@ -1283,18 +1215,25 @@ class BertForPreTraining(BertPreTrainedModel):
         next_sentence_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
             Labels for computing the next sequence prediction (classification) loss. Input should be a sequence pair
             (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
             - 0 indicates sequence B is a continuation of sequence A,
             - 1 indicates sequence B is a random sequence.
         kwargs (:obj:`Dict[str, any]`, optional, defaults to `{}`):
             Used to hide legacy arguments that have been deprecated.
+
         Returns:
+
         Example::
+
             >>> from transformers import BertTokenizer, BertForPreTraining
             >>> import torch
+
             >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             >>> model = BertForPreTraining.from_pretrained('bert-base-uncased')
+
             >>> inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
             >>> outputs = model(**inputs)
+
             >>> prediction_logits = outputs.prediction_logits
             >>> seq_relationship_logits = outputs.seq_relationship_logits
         """
@@ -1386,6 +1325,7 @@ class BertLMHeadModel(BertPreTrainedModel):
         encoder_attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
             Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in
             the cross-attention if the model is configured as a decoder. Mask values selected in ``[0, 1]``:
+
             - 1 for tokens that are **not masked**,
             - 0 for tokens that are **masked**.
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
@@ -1394,22 +1334,29 @@ class BertLMHeadModel(BertPreTrainedModel):
             ignored (masked), the loss is only computed for the tokens with labels n ``[0, ..., config.vocab_size]``
         past_key_values (:obj:`tuple(tuple(torch.FloatTensor))` of length :obj:`config.n_layers` with each tuple having 4 tensors of shape :obj:`(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
             Contains precomputed key and value hidden states of the attention blocks. Can be used to speed up decoding.
+
             If :obj:`past_key_values` are used, the user can optionally input only the last :obj:`decoder_input_ids`
             (those that don't have their past key value states given to this model) of shape :obj:`(batch_size, 1)`
             instead of all :obj:`decoder_input_ids` of shape :obj:`(batch_size, sequence_length)`.
         use_cache (:obj:`bool`, `optional`):
             If set to :obj:`True`, :obj:`past_key_values` key value states are returned and can be used to speed up
             decoding (see :obj:`past_key_values`).
+
         Returns:
+
         Example::
+
             >>> from transformers import BertTokenizer, BertLMHeadModel, BertConfig
             >>> import torch
+
             >>> tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
             >>> config = BertConfig.from_pretrained("bert-base-cased")
             >>> config.is_decoder = True
             >>> model = BertLMHeadModel.from_pretrained('bert-base-cased', config=config)
+
             >>> inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
             >>> outputs = model(**inputs)
+
             >>> prediction_logits = outputs.logits
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -1613,17 +1560,24 @@ class BertForNextSentencePrediction(BertPreTrainedModel):
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
             Labels for computing the next sequence prediction (classification) loss. Input should be a sequence pair
             (see ``input_ids`` docstring). Indices should be in ``[0, 1]``:
+
             - 0 indicates sequence B is a continuation of sequence A,
             - 1 indicates sequence B is a random sequence.
+
         Returns:
+
         Example::
+
             >>> from transformers import BertTokenizer, BertForNextSentencePrediction
             >>> import torch
+
             >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             >>> model = BertForNextSentencePrediction.from_pretrained('bert-base-uncased')
+
             >>> prompt = "In Italy, pizza served in formal settings, such as at a restaurant, is presented unsliced."
             >>> next_sentence = "The sky is blue due to the shorter wavelength of blue light."
             >>> encoding = tokenizer(prompt, next_sentence, return_tensors='pt')
+
             >>> outputs = model(**encoding, labels=torch.LongTensor([1]))
             >>> logits = outputs.logits
             >>> assert logits[0, 0] < logits[0, 1] # next sentence was random
@@ -1686,18 +1640,12 @@ class BertForSequenceClassification(BertPreTrainedModel):
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifiers = nn.ModuleList([
+        self.layer_classifier = nn.ModuleList([
             nn.Linear(config.hidden_size, config.num_labels) for _ in range(config.num_hidden_layers)
             ])
-        # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        self.avg_classifier = nn.Linear(config.hidden_size, config.num_labels)
         
-        # [batch x 1 x hidden_size] -> [batch x 1]
-        self.exit_port = nn.ModuleList([
-            nn.Linear(config.hidden_size, 2) for _ in range(config.num_hidden_layers)
-            ])
-        
-        self.stop_layer = None
-        self.train_exit_decision = None
+        self.layer_stop = None
         self.init_weights()
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
@@ -1719,6 +1667,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        layer_stop=None # for experiment
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -1727,7 +1676,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
+        
+        # pooled_sequence_outputs is a list hold pooled output of 12 layers
         outputs, pooled_sequence_outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
@@ -1738,159 +1688,76 @@ class BertForSequenceClassification(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            layer_stop=layer_stop
         )
-
-        loss = 0
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
+        
+        if self.training:
+            pooled_output = outputs[1]
+    
+            pooled_output = self.dropout(pooled_output)
+            logits = self.avg_classifier(pooled_output)
             
-            for i in range(self.config.num_hidden_layers):
-                pooled_output = pooled_sequence_outputs[i]
-                pooled_output = self.dropout(pooled_output)
-                logits = self.classifiers[i](pooled_output)
-                
+            loss = None
+            if labels is not None:
+                if self.config.problem_type is None:
+                    if self.num_labels == 1:
+                        self.config.problem_type = "regression"
+                    elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                        self.config.problem_type = "single_label_classification"
+                    else:
+                        self.config.problem_type = "multi_label_classification"
+                    
                 if self.config.problem_type == "regression":
                     loss_fct = MSELoss()
                     if self.num_labels == 1:
-                        loss += loss_fct(logits.squeeze(), labels.squeeze())
+                        loss = loss_fct(logits.squeeze(), labels.squeeze())
                     else:
-                        loss += loss_fct(logits, labels)
+                        loss = loss_fct(logits, labels)
                 elif self.config.problem_type == "single_label_classification":
                     loss_fct = CrossEntropyLoss()
-                    loss += loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                    loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
                 elif self.config.problem_type == "multi_label_classification":
                     loss_fct = BCEWithLogitsLoss()
-                    loss += loss_fct(logits, labels)
+                    loss = loss_fct(logits, labels)
                 
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-    
-    def exit_forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        labels=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        r"""
-        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
-            Labels for computing the sequence classification/regression loss. Indices should be in :obj:`[0, ...,
-            config.num_labels - 1]`. If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
-            If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
-        outputs, pooled_sequence_outputs = self.bert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        
-        loss = 0
-        if labels is not None:
+                # Add loss of layer classifiers
+                for i in range(self.config.num_hidden_layers):
+                    pooled_output = pooled_sequence_outputs[i]
+                    pooled_output = self.dropout(pooled_output)
+                    logits = self.layer_classifier[i](pooled_output)
+                    
+                    if self.config.problem_type == "regression":
+                        loss_fct = MSELoss()
+                        if self.num_labels == 1:
+                            loss += loss_fct(logits.squeeze(), labels.squeeze())
+                        else:
+                            loss += loss_fct(logits, labels)
+                    elif self.config.problem_type == "single_label_classification":
+                        loss_fct = CrossEntropyLoss()
+                        loss += loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                    elif self.config.problem_type == "multi_label_classification":
+                        loss_fct = BCEWithLogitsLoss()
+                        loss += loss_fct(logits, labels)
+        else:
+            loss = None
+            # ignore the first hidden state as embedding hidden state
+            self.layer_stop = len(pooled_sequence_outputs) - 1
+            pooled_output = pooled_sequence_outputs[-1]
+            pooled_output = self.dropout(pooled_output)
+            logits = self.layer_classifier[self.layer_stop - 1](pooled_output)
             
-            for i in range(self.config.num_hidden_layers):
-                pooled_output = pooled_sequence_outputs[i]
-                pooled_output = self.dropout(pooled_output)
-                logits = self.classifiers[i](pooled_output)
-                
-                loss_fct = CrossEntropyLoss()
-                # pooled_sequence_outputs[i]: batch x 1 x hidden_size
-                # multiply batch x (1 * hidden_size) with (1 * hidden_size) x 1
-                exit_decision = self.exit_port[i](pooled_sequence_outputs[i])
-                predictions = logits.argmax(dim=-1) # [batch x 1]
-                exit_decision_labels = (predictions == labels).long()
-                loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
-                
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
-
+        
+        # The final logits is from the last layer
         return SequenceClassifierOutput(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-    
-    
-    def exit_inference(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        labels=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        r"""
-        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
-            Labels for computing the sequence classification/regression loss. Indices should be in :obj:`[0, ...,
-            config.num_labels - 1]`. If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
-            If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
-        outputs, pooled_sequence_outputs = self.bert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        
-        pooled_output = pooled_sequence_outputs[-1]
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifiers[len(pooled_sequence_outputs) - 1](pooled_output)
-        self.stop_layer = len(pooled_sequence_outputs) - 1
-        loss = None
-                
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
 
-        return SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-        
-        
 
 @add_start_docstrings(
     """
