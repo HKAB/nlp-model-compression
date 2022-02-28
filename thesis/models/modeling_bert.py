@@ -688,9 +688,9 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
-            exit_decision = torch.nn.functional.softmax(exit_port[i](hidden_states))
+            exit_decision = torch.nn.functional.softmax(exit_port[i](hidden_states[:, 0]))
             # only support for batch 1
-            if abs(exit_decision[0][1] - exit_decision[0][0]) > 0.5:
+            if exit_decision[0][1] > exit_decision[0][0] and exit_decision[0][1] - exit_decision[0][0] > 0.5:
                 break
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1691,7 +1691,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
         self.stop_layer = None
-        self.train_exit_decision = None
+        self.train_exit_decision = []
         self.init_weights()
         
         # [batch x 1 x hidden_size] -> [batch x 1]
@@ -1702,7 +1702,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         self.exit_port.apply(self._init_exit_ports)
         
     def _init_exit_ports(self, m):
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+        if isinstance(m, nn.Linear):
             nn.init.xavier_normal_(m.weight)
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
@@ -1830,6 +1830,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 exit_decision = self.exit_port[i](pooled_sequence_outputs[i])
                 predictions = logits.argmax(dim=-1) # [batch x 1]
                 exit_decision_labels = (predictions == labels).long()
+                
+                self.train_exit_decisions.append(exit_decision_labels)
+                
                 loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
                 
         if not return_dict:
