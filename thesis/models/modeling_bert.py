@@ -1691,7 +1691,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
         self.stop_layer = None
-        self.train_exit_decisions = []
+        self.train_exit_decisions = None
         self.init_weights()
         
         # [batch x 1 x hidden_size] -> [batch x 1]
@@ -1819,7 +1819,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         
         loss = 0
         if labels is not None:
-            
+            layer_exit_decisions = []
             for i in range(self.config.num_hidden_layers):
                 pooled_output = pooled_sequence_outputs[i]
                 pooled_output = self.dropout(pooled_output)
@@ -1831,10 +1831,16 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 predictions = logits.argmax(dim=-1) # [batch x 1]
                 exit_decision_labels = (predictions == labels).long()
                 
-                self.train_exit_decisions.append(exit_decision_labels)
+                # exit_decision_labels: batch x 1
+                layer_exit_decisions.append(exit_decision_labels.sum())
                 
                 loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
                 
+            if self.train_exit_decisions is None:
+                self.train_exit_decisions = torch.stack(layer_exit_decisions)
+            else:
+                self.train_exit_decisions += torch.stack(layer_exit_decisions)
+            
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
