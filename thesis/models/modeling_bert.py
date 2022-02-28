@@ -633,7 +633,6 @@ class BertEncoder(nn.Module):
         output_hidden_states=False,
         return_dict=True,
         exit_port=None,
-        pooler=None
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -689,9 +688,9 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
-            exit_decision = exit_port[i](pooler[i](hidden_states)).argmax(dim=1)
+            exit_decision = torch.nn.functional.softmax(exit_port[i](hidden_states))
             # only support for batch 1
-            if exit_decision:
+            if abs(exit_decision[0][1] - exit_decision[0][0]) > 0.5:
                 break
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -940,11 +939,7 @@ class BertModel(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
 
         self.pooler = BertPooler(config) if add_pooling_layer else None
-        
-        self.exit_port_pooler = nn.ModuleList([
-            BertPooler(config) for _ in range(config.num_hidden_layers)
-            ])
-        
+
         self.init_weights()
 
     def get_input_embeddings(self):
@@ -1218,7 +1213,6 @@ class BertModel(BertPreTrainedModel):
             output_hidden_states=True,
             return_dict=return_dict,
             exit_port=exit_port,
-            pooler=self.exit_port_pooler
         )
         
         pooled_sequence_outputs = []
@@ -1696,14 +1690,20 @@ class BertForSequenceClassification(BertPreTrainedModel):
             ])
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
+        self.stop_layer = None
+        self.train_exit_decision = None
+        self.init_weights()
+        
         # [batch x 1 x hidden_size] -> [batch x 1]
         self.exit_port = nn.ModuleList([
             nn.Linear(config.hidden_size, 2) for _ in range(config.num_hidden_layers)
             ])
         
-        self.stop_layer = None
-        self.train_exit_decision = None
-        self.init_weights()
+        self.exit_port.apply(self._init_exit_ports)
+        
+    def _init_exit_ports(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.xavier_normal_(m.weight)
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
