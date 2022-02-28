@@ -690,6 +690,7 @@ class BertEncoder(nn.Module):
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
             exit_decision = exit_port[i](pooler(hidden_states)).argmax(dim=1)
+            # only support for batch 1
             if exit_decision:
                 break
         if output_hidden_states:
@@ -1861,7 +1862,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
-        outputs, pooled_sequence_outputs = self.bert(
+        outputs, pooled_sequence_outputs = self.bert.exit_forward(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -1871,6 +1872,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            exit_port=self.exit_port
         )
         
         pooled_output = pooled_sequence_outputs[-1]
