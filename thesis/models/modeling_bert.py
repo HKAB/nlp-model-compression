@@ -688,9 +688,9 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
-            exit_decision = torch.nn.functional.softmax(exit_port[i](hidden_states))
+            exit_decision = torch.nn.functional.softmax(exit_port[i](torch.max(hidden_states, dim=1)))
             # only support for batch 1
-            if abs(exit_decision[0][1] - exit_decision[0][0]) > 0.5:
+            if exit_decision[0][1] - exit_decision[0][0] > 0.5:
                 break
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1817,6 +1817,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return_dict=return_dict,
         )
         
+        # 
+        # outputs.hidden_states tuple 12 x (batch x seq x hidden_size)
+        
         loss = 0
         if labels is not None:
             
@@ -1827,7 +1830,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 
                 loss_fct = CrossEntropyLoss()
                 # pooled_sequence_outputs[i]: batch x hidden_size
-                exit_decision = self.exit_port[i](pooled_sequence_outputs[i])
+                exit_decision = self.exit_port[i](torch.max(outputs.hidden_states[i], dim=1))
                 predictions = logits.argmax(dim=-1) # [batch x 1]
                 exit_decision_labels = (predictions == labels).long()
                 loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
