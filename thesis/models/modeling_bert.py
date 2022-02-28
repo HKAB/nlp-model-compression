@@ -1691,7 +1691,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
         self.stop_layer = None
-        self.train_exit_decision = []
+        self.train_exit_decisions = []
         self.init_weights()
         
         # [batch x 1 x hidden_size] -> [batch x 1]
