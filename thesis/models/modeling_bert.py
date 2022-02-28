@@ -689,7 +689,7 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
-            exit_decision = exit_port[i](pooler(hidden_states)).argmax(dim=1)
+            exit_decision = exit_port[i](pooler[i](hidden_states)).argmax(dim=1)
             # only support for batch 1
             if exit_decision:
                 break
@@ -940,7 +940,11 @@ class BertModel(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
 
         self.pooler = BertPooler(config) if add_pooling_layer else None
-
+        
+        self.exit_port_pooler = nn.ModuleList([
+            BertPooler(config) for _ in range(config.num_hidden_layers)
+            ])
+        
         self.init_weights()
 
     def get_input_embeddings(self):
@@ -1214,7 +1218,7 @@ class BertModel(BertPreTrainedModel):
             output_hidden_states=True,
             return_dict=return_dict,
             exit_port=exit_port,
-            pooler=self.pooler
+            pooler=self.exit_port_pooler
         )
         
         pooled_sequence_outputs = []
@@ -1822,8 +1826,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 logits = self.classifiers[i](pooled_output)
                 
                 loss_fct = CrossEntropyLoss()
-                # pooled_sequence_outputs[i]: batch x 1 x hidden_size
-                # multiply batch x (1 * hidden_size) with (1 * hidden_size) x 1
+                # pooled_sequence_outputs[i]: batch x hidden_size
                 exit_decision = self.exit_port[i](pooled_sequence_outputs[i])
                 predictions = logits.argmax(dim=-1) # [batch x 1]
                 exit_decision_labels = (predictions == labels).long()
