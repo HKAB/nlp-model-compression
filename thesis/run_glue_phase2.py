@@ -143,6 +143,9 @@ def parse_args():
     parser.add_argument(
         "--num_warmup_steps", type=int, default=0, help="Number of steps for the warmup in the lr scheduler."
     )
+    parser.add_argument(
+        "--exit_port_threshold", type=float, default=0.5, help="Threshold to make decision"
+    )
     parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
     parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     args = parser.parse_args()
@@ -250,7 +253,7 @@ def main():
     #     config=config,
     # )
     
-    config = BertConfig(num_labels=num_labels)
+    config = BertConfig(num_labels=num_labels, exit_port_threshold=args.exit_port_thresholds)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
     model = BertForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     

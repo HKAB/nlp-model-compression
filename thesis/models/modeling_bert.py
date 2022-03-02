@@ -692,7 +692,7 @@ class BertEncoder(nn.Module):
                 exit_port[i](torch.mean(hidden_states, dim=1)), 
                 dim=-1)
             # only support for batch 1
-            if exit_decision[0][1] - exit_decision[0][0] > 0.8:
+            if exit_decision[0][1] - exit_decision[0][0] > self.config.exit_port_threshold:
                 break
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1692,7 +1692,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             ])
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
-        self.stop_layer = None
+        self.stop_layers = []
         self.train_exit_decision = None
         self.init_weights()
         
@@ -1886,7 +1886,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         pooled_output = pooled_sequence_outputs[-1]
         pooled_output = self.dropout(pooled_output)
         logits = self.classifiers[len(pooled_sequence_outputs) - 1](pooled_output)
-        self.stop_layer = len(pooled_sequence_outputs) - 1
+        self.stop_layers.append(len(pooled_sequence_outputs) - 1)
         loss = None
                 
         if not return_dict:
