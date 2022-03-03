@@ -430,7 +430,7 @@ def main():
         
         model.eval()
         for step, batch in enumerate(eval_dataloader):
-            outputs = model.exit_inference(**batch)
+            outputs = model.exit_inference_forward(**batch)
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             metric.add_batch(
                 predictions=accelerator.gather(predictions),
@@ -455,7 +455,7 @@ def main():
 
         model.eval()
         for step, batch in enumerate(eval_dataloader):
-            outputs = model.exit_inference(**batch)
+            outputs = model.exit_inference_forward(**batch)
             predictions = outputs.logits.argmax(dim=-1)
             metric.add_batch(
                 predictions=accelerator.gather(predictions),
