@@ -633,6 +633,8 @@ class BertEncoder(nn.Module):
         output_hidden_states=False,
         return_dict=True,
         exit_port=None,
+        classifiers=None,
+        pooler=None
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -688,11 +690,17 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
+            entropy = torch.distributions.Categorical(
+                        probs = torch.nn.functional.softmax(
+                            classifiers[i](pooler(hidden_states))
+                            )
+                        ).entropy()
+            
             exit_decision = torch.nn.functional.softmax(
                 exit_port[i](torch.mean(hidden_states, dim=1)), 
                 dim=-1)
             # only support for batch 1
-            if exit_decision[0][1] - exit_decision[0][0] > self.config.exit_port_threshold:
+            if exit_decision[0][1] > self.config.exit_port_threshold and entropy < self.config.entropy_threshold:
                 break
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1116,6 +1124,7 @@ class BertModel(BertPreTrainedModel):
         output_hidden_states=None,
         return_dict=None,
         exit_port=None, # parameter for determining exit
+        classifiers=None, # parameter for determining exit
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -1215,6 +1224,8 @@ class BertModel(BertPreTrainedModel):
             output_hidden_states=True,
             return_dict=return_dict,
             exit_port=exit_port,
+            classifiers=classifiers,
+            pooler=self.pooler,
         )
         
         pooled_sequence_outputs = []
@@ -1880,7 +1891,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            exit_port=self.exit_port
+            exit_port=self.exit_port,
+            classifiers=self.classifiers
         )
         
         pooled_output = pooled_sequence_outputs[-1]

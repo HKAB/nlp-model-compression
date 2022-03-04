@@ -253,8 +253,8 @@ def main():
     #     config=config,
     # )
     
-    config = BertConfig(num_labels=num_labels, exit_port_threshold=args.exit_port_thresholds)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
+    config = BertConfig(num_labels=num_labels, exit_port_threshold=args.exit_port_threshold)
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased", use_fast=not args.use_slow_tokenizer)
     model = BertForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     
     # we frozen all the weight, and only train exit_port
