@@ -1845,7 +1845,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 # pooled_sequence_outputs[i]: batch x hidden_size
                 exit_decision = self.exit_port[i](torch.mean(outputs.hidden_states[i], dim=1))
                 predictions = logits.argmax(dim=-1) # [batch x 1]
-                exit_decision_labels = (predictions == labels).long()
+                exit_decision_labels = (predictions.unsqueeze(1) == labels).long()
                 loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
                 
         if not return_dict:
