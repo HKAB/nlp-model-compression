@@ -1713,6 +1713,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             ])
         
         self.exit_port.apply(self._init_exit_ports)
+        self.entropy_label = [None for _ in range(0, 12)]
         
     def _init_exit_ports(self, m):
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
@@ -1840,12 +1841,22 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 pooled_output = pooled_sequence_outputs[i]
                 pooled_output = self.dropout(pooled_output)
                 logits = self.classifiers[i](pooled_output)
-                
+                entropy = torch.distributions.Categorical(
+                            probs = torch.nn.functional.softmax(
+                                logits, 
+                                dim=-1)
+                            ).entropy()
                 loss_fct = CrossEntropyLoss()
                 # pooled_sequence_outputs[i]: batch x hidden_size
                 exit_decision = self.exit_port[i](torch.mean(outputs.hidden_states[i], dim=1))
                 predictions = logits.argmax(dim=-1) # [batch x 1]
-                exit_decision_labels = (predictions == labels).long()
+                exit_decision_labels = (predictions.unsqueeze(1) == labels).long() # [batch x 1]
+                
+                t_entropy_label = torch.cat((entropy.unsqueeze(1), exit_decision_labels), dim=1)
+                self.entropy_label[i] = t_entropy_label \
+                        if self.entropy_label[i] is None \
+                        else torch.cat((self.entropy_label[i], t_entropy_label), dim=0)
+                        
                 loss += loss_fct(exit_decision.view(-1, 2), exit_decision_labels.view(-1))
                 
         if not return_dict:
