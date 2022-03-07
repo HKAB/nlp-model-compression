@@ -692,7 +692,7 @@ class BertEncoder(nn.Module):
             # my deebert entropy implementation
             entropy = torch.distributions.Categorical(
                         probs = torch.nn.functional.softmax(
-                            classifiers[i](pooler(hidden_states))
+                            classifiers[i](pooler(hidden_states)), dim=-1
                             )
                         ).entropy()
             if entropy < self.config.entropy_threshold[i]:
@@ -1697,8 +1697,8 @@ class DeeBertForSequenceClassification(BertPreTrainedModel):
             ])
         # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
+        self.entropy_label = [None for _ in range(config.num_hidden_layers)]
         self.stop_layers = []
-        self.train_exit_decision = None
         self.init_weights()
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
