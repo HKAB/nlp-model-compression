@@ -695,7 +695,7 @@ class BertEncoder(nn.Module):
                             classifiers[i](pooler(hidden_states))
                             )
                         ).entropy()
-            if entropy < self.config.entropy_threshold:
+            if entropy < self.config.entropy_threshold[i]:
                 break
             
         if output_hidden_states:
@@ -1768,6 +1768,78 @@ class DeeBertForSequenceClassification(BertPreTrainedModel):
                 elif self.config.problem_type == "multi_label_classification":
                     loss_fct = BCEWithLogitsLoss()
                     loss += loss_fct(logits, labels)
+                
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+    
+    def make_entropy_exit_decision(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        r"""
+        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
+            Labels for computing the sequence classification/regression loss. Indices should be in :obj:`[0, ...,
+            config.num_labels - 1]`. If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
+            If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        outputs, pooled_sequence_outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        
+        # 
+        # outputs.hidden_states tuple 12 x (batch x seq x hidden_size)
+        
+        loss = None
+        if labels is not None:
+            
+            for i in range(self.config.num_hidden_layers):
+                pooled_output = pooled_sequence_outputs[i]
+                pooled_output = self.dropout(pooled_output)
+                logits = self.classifiers[i](pooled_output)
+                entropy = torch.distributions.Categorical(
+                            probs = torch.nn.functional.softmax(
+                                logits, 
+                                dim=-1)
+                            ).entropy() 
+                # entropy: [batch]
+                # pooled_sequence_outputs[i]: batch x hidden_size
+                # predictions: [batch]
+                predictions = logits.argmax(dim=-1)
+                # labels: [batch]
+                # exit_decision_labels: [batch]
+                exit_decision_labels = (predictions == labels).long()
+                
+                t_entropy_label = torch.cat((entropy.unsqueeze(1), exit_decision_labels.unsqueeze(1)), dim=1)
+                self.entropy_label[i] = t_entropy_label \
+                        if self.entropy_label[i] is None \
+                        else torch.cat((self.entropy_label[i], t_entropy_label), dim=0)
                 
         if not return_dict:
             output = (logits,) + outputs[2:]

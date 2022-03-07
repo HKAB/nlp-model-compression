@@ -6,6 +6,5 @@ Created on Mon Feb 14 10:30:35 2022
 @author: hkab
 """
 
-from models.modeling_bert import BertForTokenClassification, BertForSequenceClassification
 from models.modeling_deebert import DeeBertForSequenceClassification
-from models.modeling_bert import BertConfig
+from models.configuration_bert import BertConfig
