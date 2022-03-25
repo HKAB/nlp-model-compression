@@ -1764,13 +1764,13 @@ class BranchyBertForSequenceClassification(BertPreTrainedModel):
                         loss += loss_fct(logits, labels)
                 elif self.config.problem_type == "single_label_classification":
                     loss_fct = CrossEntropyLoss()
-                    loss += i*loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                    loss += (i + 1)*loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
                 elif self.config.problem_type == "multi_label_classification":
                     loss_fct = BCEWithLogitsLoss()
-                    loss += i*loss_fct(logits, labels)
+                    loss += (i + 1)**loss_fct(logits, labels)
             
-            # sum 0 -> 11 = 66
-            loss = loss/66.0
+            # sum 1 -> 12 = 78
+            loss = loss/78.0
                 
         if not return_dict:
             output = (logits,) + outputs[2:]
