@@ -41,7 +41,7 @@ from transformers import (
 from transformers.utils.versions import require_version
 
 # My custom model
-from models import BertForSequenceClassification
+from models import BranchyBertForSequenceClassification
 from models import BertConfig
 
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ def main():
     
     config = BertConfig(num_labels=num_labels)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
-    model = BertForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
+    model = BranchyBertForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     
     # Preprocessing the datasets
     if args.task_name is not None:
@@ -420,7 +420,7 @@ def main():
         
         model.eval()
         for step, batch in enumerate(eval_dataloader):
-            outputs = model(**batch)
+            outputs = model.exit_inference_forward(**batch)
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             metric.add_batch(
                 predictions=accelerator.gather(predictions),

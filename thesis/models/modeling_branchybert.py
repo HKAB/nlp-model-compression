@@ -689,7 +689,7 @@ class BertEncoder(nn.Module):
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
-            # my deebert entropy implementation
+            # my BranchyBert entropy implementation
             entropy = torch.distributions.Categorical(
                         probs = torch.nn.functional.softmax(
                             classifiers[i](pooler(hidden_states)), dim=-1
@@ -1684,7 +1684,7 @@ class BertForNextSentencePrediction(BertPreTrainedModel):
     """,
     BERT_START_DOCSTRING,
 )
-class DeeBertForSequenceClassification(BertPreTrainedModel):
+class BranchyBertForSequenceClassification(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
@@ -1764,10 +1764,13 @@ class DeeBertForSequenceClassification(BertPreTrainedModel):
                         loss += loss_fct(logits, labels)
                 elif self.config.problem_type == "single_label_classification":
                     loss_fct = CrossEntropyLoss()
-                    loss += loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                    loss += i*loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
                 elif self.config.problem_type == "multi_label_classification":
                     loss_fct = BCEWithLogitsLoss()
-                    loss += loss_fct(logits, labels)
+                    loss += i*loss_fct(logits, labels)
+            
+            # sum 0 -> 11 = 66
+            loss = loss/66.0
                 
         if not return_dict:
             output = (logits,) + outputs[2:]
