@@ -251,6 +251,7 @@ def main():
     # )
     
     config = BertConfig(num_labels=num_labels)
+    config.entropy_threshold = [0.2 for _ in range(0, 12)]
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
     model = BranchyBertForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     
