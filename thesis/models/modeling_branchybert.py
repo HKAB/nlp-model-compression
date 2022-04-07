@@ -640,6 +640,10 @@ class BertEncoder(nn.Module):
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
 
         next_decoder_cache = () if use_cache else None
+        
+        pabee_count = 0
+        prev_prediction = None
+        
         for i, layer_module in enumerate(self.layer):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
@@ -690,13 +694,27 @@ class BertEncoder(nn.Module):
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
             
             # my BranchyBert entropy implementation
+            logits = classifiers[i](pooler(hidden_states))
             entropy = torch.distributions.Categorical(
-                        probs = torch.nn.functional.softmax(
-                            classifiers[i](pooler(hidden_states)), dim=-1
-                            )
-                        ).entropy()
-            if entropy < self.config.entropy_threshold[i]:
-                break
+                probs = torch.nn.functional.softmax(
+                    logits, 
+                    dim=-1)
+                ).entropy()
+            
+            if self.config.use_pabee:
+                curr_prediction = logits.argmax(dim=-1)
+                if prev_prediction is None:
+                    prev_prediction = curr_prediction
+                elif (curr_prediction == prev_prediction):
+                    pabee_count += 1
+                else:
+                    pabee_count = 0
+                    
+                if entropy < self.config.entropy_threshold[i] and pabee_count >= 2:
+                    break
+            else:
+                if entropy < self.config.entropy_threshold[i]:
+                    break
             
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
