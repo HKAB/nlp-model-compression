@@ -128,6 +128,7 @@ class BertConfig(PretrainedConfig):
         gradient_checkpointing=False,
         position_embedding_type="absolute",
         use_cache=False,
+        use_pabee=False,
         **kwargs
     ):
         super().__init__(pad_token_id=pad_token_id, **kwargs)
@@ -147,3 +148,4 @@ class BertConfig(PretrainedConfig):
         self.gradient_checkpointing = gradient_checkpointing
         self.position_embedding_type = position_embedding_type
         self.use_cache = use_cache
+        self.use_pabee = use_pabee,
